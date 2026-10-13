@@ -25,7 +25,7 @@ async function main() {
 
     const page = await browser.newPage();
 
-    await page.goto("https://example.com", {
+    await page.goto("https://playsza.st/uembed.php?id=star3in", {
       waitUntil: "domcontentloaded",
       timeout: 30000,
     });
