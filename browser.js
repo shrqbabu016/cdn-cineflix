@@ -1,7 +1,7 @@
 const puppeteer = require("puppeteer-core");
 const Browserbase = require("@browserbasehq/sdk");
 
-const BROWSERBASE_API_KEY = process.env.BROWSERBASE_API_KEY;
+const BROWSERBASE_API_KEY = "bb_live_5pfZpM9MobOO3FCuksA9a3r8ZDA";
 const REFERER = "https://playsza.st/";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
