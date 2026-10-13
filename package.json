@@ -1,11 +1,11 @@
 
 {
-  "name": "cloudflare-browser-run-test",
+  "name": "cloudflare-browser",
   "version": "1.0.0",
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "test": "node browser-test.js"
+    "test": "node browser.js"
   },
   "dependencies": {
     "puppeteer-core": "^24.0.0"
