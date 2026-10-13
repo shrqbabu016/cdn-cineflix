@@ -8,6 +8,7 @@
     "start": "node browser.js"
   },
   "dependencies": {
-    "puppeteer-core": "^24.0.0"
+    "puppeteer-core": "^21.0.0",
+    "@browserbasehq/sdk": "^1.0.0"
   }
 }
