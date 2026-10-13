@@ -11,8 +11,8 @@
  * - Live Sports M3U8 Manifest Rewriter & Chunk Relay
  */
 
-const ADMIN_PIN = "shrq63938";
-const APP_SECRET_KEY = "s211";
+const ADMIN_PIN = "shrq6396827211&&shrq9808335538";
+const APP_SECRET_KEY = "shrq6396827211";
 
 // Permanent VPS Backend URL (DuckDNS / VPS / HuggingFace)
 const VPS_BASE_URL = "https://cineflix-ott.duckdns.org";
