@@ -1,10 +1,12 @@
+const puppeteer = require("puppeteer-core");
+const Browserbase = require("@browserbasehq/sdk");
+
+const BROWSERBASE_API_KEY = process.env.BROWSERBASE_API_KEY;
+const REFERER = "https://playsza.st/";
+
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
 const TABLE_NAME = "live_channels";
-const REFERER = "https://playsza.st/";
-
-const CF_ACCOUNT_ID = process.env.CF_ACCOUNT_ID;
-const CF_API_TOKEN = process.env.CF_API_TOKEN;
 
 const TARGETS = [
   {
@@ -129,83 +131,158 @@ async function updateChannelInSupabase(channelId, streamUrl) {
   console.log(`✅ Supabase row inserted: ${channelId}`);
 }
 
-// Fetch rendered HTML using Cloudflare Browser Run Content API
-async function fetchRenderedHtml(targetUrl) {
-  if (!CF_ACCOUNT_ID || !CF_API_TOKEN) {
-    throw new Error("Missing CF_ACCOUNT_ID or CF_API_TOKEN");
-  }
+// Wait for Cloudflare challenge to pass
+async function waitForChallenge(page, timeoutMs = 90000) {
+  const start = Date.now();
 
-  const endpoint = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/browser-run/content`;
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const title = await page.title();
+      const bodyText = await page.evaluate(() => {
+        return (document.body?.innerText || "").toLowerCase();
+      });
 
-  console.log(`  → Fetching rendered HTML via Cloudflare Content API...`);
+      const isChallenge = title.toLowerCase().includes("moment") ||
+                          title.toLowerCase().includes("challenge") ||
+                          bodyText.includes("checking") ||
+                          bodyText.includes("verify") ||
+                          bodyText.includes("please wait");
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${CF_API_TOKEN}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      url: targetUrl,
-      gotoOptions: {
-        waitUntil: "networkidle0"  // Wait for JS to fully execute
+      if (!isChallenge) {
+        console.log(`  ✅ Challenge passed (${Math.round((Date.now() - start) / 1000)}s)`);
+        return true;
       }
-    })
-  });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Cloudflare API failed (${response.status}): ${errorText}`);
+      const elapsed = Math.round((Date.now() - start) / 1000);
+      if (elapsed % 10 === 0) {
+        console.log(`  ⏳ Waiting for challenge... (${elapsed}s)`);
+      }
+
+      await new Promise(r => setTimeout(r, 2000));
+    } catch (e) {
+      await new Promise(r => setTimeout(r, 2000));
+    }
   }
 
-  const html = await response.text();
-  console.log(`  → HTML received: ${html.length} chars`);
-
-  return html;
+  return false;
 }
 
-async function processTarget(target) {
-  console.log(`  → Target: ${target.url}`);
+// Process a single target
+async function processTarget(bb, target) {
+  let browser = null;
+  let session = null;
 
-  // Fetch rendered HTML
-  const html = await fetchRenderedHtml(target.url);
+  try {
+    // Create BrowserBase session
+    console.log(`  → Creating BrowserBase session...`);
+    session = await bb.sessions.create({
+      timeout: 120,  // 2 minutes timeout
+      keepAlive: false
+    });
 
-  // Check if still on challenge page
-  if (html.includes("Just a moment") ||
-      html.includes("Checking your browser") ||
-      html.includes("security verification")) {
-    console.log(`  ⚠️ Cloudflare challenge still present in HTML`);
-    throw new Error("Cloudflare challenge not passed");
+    console.log(`  → Session ID: ${session.id}`);
+
+    // Connect puppeteer
+    browser = await puppeteer.connect({
+      browserWSEndpoint: session.connectUrl,
+      defaultViewport: { width: 1920, height: 1080 }
+    });
+
+    const page = await browser.newPage();
+
+    // Set realistic user agent
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
+    // Navigate to page
+    console.log(`  → Navigating to: ${target.url}`);
+    await page.goto(target.url, {
+      waitUntil: "domcontentloaded",
+      timeout: 60000
+    });
+
+    // Check for challenge
+    const title = await page.title();
+    console.log(`  → Page title: ${title}`);
+
+    if (title.toLowerCase().includes("moment") ||
+        title.toLowerCase().includes("challenge")) {
+      console.log(`  ⚠️ Cloudflare challenge detected, waiting...`);
+      const passed = await waitForChallenge(page, 90000);
+
+      if (!passed) {
+        throw new Error("Cloudflare challenge not passed");
+      }
+    }
+
+    // Wait for video player to load
+    console.log(`  → Waiting for content...`);
+    await new Promise(r => setTimeout(r, 5000));
+
+    // Debug info
+    const pageInfo = await page.evaluate(() => {
+      return {
+        title: document.title,
+        bodyPreview: (document.body?.innerText || "").substring(0, 200),
+        iframes: Array.from(document.querySelectorAll('iframe')).length,
+        videos: document.querySelectorAll('video').length
+      };
+    });
+
+    console.log(`  → Title: ${pageInfo.title}`);
+    console.log(`  → Body: ${pageInfo.bodyPreview.substring(0, 100)}...`);
+    console.log(`  → Iframes: ${pageInfo.iframes}, Videos: ${pageInfo.videos}`);
+
+    // Try to extract M3U8
+    let m3u8Url = null;
+
+    for (let i = 0; i < 30 && !m3u8Url; i++) {
+      const html = await page.content();
+      m3u8Url = extractM3u8FromHtml(html);
+
+      if (!m3u8Url) {
+        if (i % 10 === 0) {
+          console.log(`  → Looking for M3U8... (${i}s)`);
+        }
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+
+    if (!m3u8Url) {
+      const html = await page.content();
+      console.log(`  ❌ No M3U8 found`);
+      console.log(`  → HTML snippet: ${html.substring(0, 300)}...`);
+      throw new Error("No M3U8 URL found");
+    }
+
+    console.log(`  ✓ M3U8 found: ${m3u8Url}`);
+
+    // Update Supabase
+    await updateChannelInSupabase(target.channelId, m3u8Url);
+
+    return true;
+
+  } finally {
+    if (browser) {
+      await browser.close().catch(() => {});
+    }
   }
-
-  // Extract M3U8
-  const m3u8Url = extractM3u8FromHtml(html);
-
-  if (!m3u8Url) {
-    console.log(`  ❌ No M3U8 found in HTML`);
-    // Debug: show snippet
-    console.log(`  → HTML snippet: ${html.substring(0, 500)}...`);
-    throw new Error("No M3U8 URL found");
-  }
-
-  console.log(`  ✓ M3U8 found: ${m3u8Url}`);
-
-  // Update Supabase
-  await updateChannelInSupabase(target.channelId, m3u8Url);
-
-  return true;
 }
 
 async function main() {
-  console.log("=== CLOUDFLARE CONTENT API STREAM SYNC ===\n");
+  console.log("=== BROWSERBASE STREAM SYNC ===\n");
 
-  if (!CF_ACCOUNT_ID || !CF_API_TOKEN) {
-    throw new Error("Missing CF_ACCOUNT_ID or CF_API_TOKEN");
+  if (!BROWSERBASE_API_KEY) {
+    throw new Error("Missing BROWSERBASE_API_KEY");
   }
 
   if (!SUPABASE_URL || !SUPABASE_KEY) {
     throw new Error("Missing SUPABASE_URL or SUPABASE_KEY");
   }
+
+  // Initialize BrowserBase SDK
+  const bb = new Browserbase({
+    apiKey: BROWSERBASE_API_KEY,
+  });
 
   for (const target of TARGETS) {
     console.log(`-----------------------------------------`);
@@ -217,7 +294,7 @@ async function main() {
       console.log(`[Attempt ${attempt}/${MAX_RETRIES}]`);
 
       try {
-        await processTarget(target);
+        await processTarget(bb, target);
         console.log(`✅ SUCCESS: ${target.channelId}\n`);
         success = true;
         break;
