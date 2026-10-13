@@ -180,44 +180,97 @@ async function processTarget(browser, target) {
     await page.setViewport({ width: 1280, height: 720 });
 
     // Navigate to the page
+    console.log(`  → Navigating to page...`);
     await page.goto(target.url, {
-      waitUntil: "domcontentloaded",
-      timeout: 30000
+      waitUntil: "networkidle2",
+      timeout: 60000
     });
 
-    // Wait for page to fully render (helps with captcha auto-solve)
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // Debug: Print page info
+    const title = await page.title();
+    const currentUrl = page.url();
+    console.log(`  → Page Title: ${title}`);
+    console.log(`  → Current URL: ${currentUrl}`);
 
-    // Check if there's a captcha and wait for it
-    const hasCaptcha = await page.evaluate(() => {
-      return document.body.innerText.toLowerCase().includes('captcha') ||
-             document.body.innerText.toLowerCase().includes('verify') ||
+    // Wait for page to fully render
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    // Get body text preview
+    const bodyPreview = await page.evaluate(() => {
+      return document.body?.innerText?.substring(0, 300) || "No body";
+    });
+    console.log(`  → Body preview: ${bodyPreview.substring(0, 150)}...`);
+
+    // Check if there's a captcha
+    const pageCheck = await page.evaluate(() => {
+      const bodyText = document.body?.innerText?.toLowerCase() || "";
+      const hasCaptcha = bodyText.includes('captcha') ||
+             bodyText.includes('verify') ||
+             bodyText.includes('cloudflare') ||
              document.querySelector('iframe[src*="captcha"]') !== null ||
-             document.querySelector('.g-recaptcha') !== null;
+             document.querySelector('.g-recaptcha') !== null ||
+             document.querySelector('#challenge-form') !== null;
+
+      // Get all iframe sources
+      const iframes = Array.from(document.querySelectorAll('iframe')).map(i => i.src);
+
+      // Get all video sources
+      const videos = Array.from(document.querySelectorAll('video')).map(v => ({
+        src: v.src,
+        currentSrc: v.currentSrc
+      }));
+
+      // Check for player div
+      const playerDivs = document.querySelectorAll('[id*="player"], [class*="player"]');
+
+      return {
+        hasCaptcha,
+        iframes,
+        videos,
+        playerCount: playerDivs.length,
+        bodyLength: document.body?.innerHTML?.length || 0
+      };
     });
 
-    if (hasCaptcha) {
-      console.log(`⚠️ Captcha detected for ${target.channelId}, waiting...`);
-      // Wait longer for auto-solve (Cloudflare browser often handles this)
-      await new Promise(resolve => setTimeout(resolve, 10000));
+    console.log(`  → Captcha detected: ${pageCheck.hasCaptcha}`);
+    console.log(`  → Iframes found: ${pageCheck.iframes.length}`);
+    if (pageCheck.iframes.length > 0) {
+      console.log(`  → Iframe sources: ${JSON.stringify(pageCheck.iframes.slice(0, 3))}`);
+    }
+    console.log(`  → Videos found: ${pageCheck.videos.length}`);
+    console.log(`  → Player divs: ${pageCheck.playerCount}`);
+    console.log(`  → HTML size: ${pageCheck.bodyLength} chars`);
+
+    if (pageCheck.hasCaptcha) {
+      console.log(`  ⚠️ Captcha/Challenge detected, waiting 15 seconds...`);
+      await new Promise(resolve => setTimeout(resolve, 15000));
     }
 
     // Try to extract M3U8 multiple times
     let m3u8Url = null;
 
-    for (let i = 0; i < 15 && !m3u8Url; i++) {
+    for (let i = 0; i < 20 && !m3u8Url; i++) {
       m3u8Url = await extractM3u8FromPage(page);
 
       if (!m3u8Url) {
+        if (i % 5 === 0) {
+          console.log(`  → Waiting for M3U8... (${i}s)`);
+        }
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
 
     if (!m3u8Url) {
+      // Final debug: print full HTML for analysis
+      const html = await page.content();
+      console.log(`  ❌ No M3U8 found after 20 seconds`);
+      console.log(`  → Full HTML (first 1000 chars):`);
+      console.log(html.substring(0, 1000));
+
       throw new Error("No M3U8 URL found");
     }
 
-    console.log(`✓ M3U8 found [${target.channelId}]: ${m3u8Url}`);
+    console.log(`  ✓ M3U8 found [${target.channelId}]: ${m3u8Url}`);
 
     // Update Supabase
     await updateChannelInSupabase(target.channelId, m3u8Url);
