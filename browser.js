@@ -1,5 +1,4 @@
 const puppeteer = require("puppeteer-core");
-const Browserbase = require("@browserbasehq/sdk");
 
 const BROWSERBASE_API_KEY = "bb_live_5pfZpM9MobOO3FCuksA9a3r8ZDA";
 const REFERER = "https://playsza.st/";
@@ -168,19 +167,34 @@ async function waitForChallenge(page, timeoutMs = 90000) {
 }
 
 // Process a single target
-async function processTarget(bb, target) {
+async function processTarget(target) {
   let browser = null;
-  let session = null;
+  let sessionId = null;
 
   try {
-    // Create BrowserBase session
+    // Create BrowserBase session via REST API
     console.log(`  → Creating BrowserBase session...`);
-    session = await bb.sessions.create({
-      timeout: 120,  // 2 minutes timeout
-      keepAlive: false
+
+    const sessionResponse = await fetch("https://www.browserbase.com/v1/sessions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-bb-api-key": BROWSERBASE_API_KEY
+      },
+      body: JSON.stringify({
+        projectId: process.env.BROWSERBASE_PROJECT_ID
+      })
     });
 
-    console.log(`  → Session ID: ${session.id}`);
+    if (!sessionResponse.ok) {
+      const errorText = await sessionResponse.text();
+      throw new Error(`Session creation failed (${sessionResponse.status}): ${errorText}`);
+    }
+
+    const session = await sessionResponse.json();
+    sessionId = session.id;
+
+    console.log(`  → Session ID: ${sessionId}`);
 
     // Connect puppeteer
     browser = await puppeteer.connect({
@@ -279,11 +293,6 @@ async function main() {
     throw new Error("Missing SUPABASE_URL or SUPABASE_KEY");
   }
 
-  // Initialize BrowserBase SDK
-  const bb = new Browserbase({
-    apiKey: BROWSERBASE_API_KEY,
-  });
-
   for (const target of TARGETS) {
     console.log(`-----------------------------------------`);
     console.log(`Processing: ${target.channelId}`);
@@ -294,7 +303,7 @@ async function main() {
       console.log(`[Attempt ${attempt}/${MAX_RETRIES}]`);
 
       try {
-        await processTarget(bb, target);
+        await processTarget(target);
         console.log(`✅ SUCCESS: ${target.channelId}\n`);
         success = true;
         break;
