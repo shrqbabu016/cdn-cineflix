@@ -42,18 +42,6 @@ const CHANNELS = [
     name: "CricBuzz 1 HD",
     embedUrl: "https://web.finalspot.top/hembedplayer/webcricn02/6/850/480",
     referer: "https://webcric.im/"
-  },
-  {
-    id: "csstream1",
-    name: "1FreeCDN Cricket 1",
-    embedUrl: "https://1freecdn.xyz/hembedplayer/csstream1/1/960/540",
-    referer: "https://webcric.is/"
-  },
-  {
-    id: "willow1",
-    name: "Willow 1 HD (WebCric)",
-    embedUrl: "https://web.finalspot.top/hembedplayer/willow1/6/850/480",
-    referer: "https://webcric.im/"
   }
 ];
 
