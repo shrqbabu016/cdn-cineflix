@@ -3,7 +3,7 @@ name: Replit Auto Start
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0/15 * * * *'
+    - cron: '0/30 * * * *'
 
 jobs:
   test-scraper:
@@ -40,4 +40,4 @@ jobs:
       # 2. Proxy Key & Script Runner
       - name: "Run Real Chrome Scraper on Xvfb"
         run: |
-          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" node scraper_test.js
+           node webcric.js
