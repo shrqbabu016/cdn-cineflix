@@ -1,0 +1,43 @@
+name: Replit Auto Start
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0/15 * * * *'
+
+jobs:
+  test-scraper:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: "Checkout Test Repository"
+        uses: actions/checkout@v4
+
+      - name: "Setup Node.js"
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: "Install Xvfb Virtual Display & System Dependencies"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgbm1 libnss3 libatk-bridge2.0-0 libgtk-3-0
+
+      # 1. Profile Cache: Pichli run ka profile restore karega aur naya profile save karega
+      - name: "Restore / Save Chrome Profile"
+        uses: actions/cache@v4
+        with:
+          path: profile
+          key: replit-chrome-profile-${{ runner.os }}-v1
+          restore-keys: |
+            replit-chrome-profile-${{ runner.os }}-
+
+      - name: "Install Scraper Dependencies"
+        run: |
+          npm install
+
+      # 2. Proxy Key & Script Runner
+      - name: "Run Real Chrome Scraper on Xvfb"
+        run: |
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" node scraper_test.js
