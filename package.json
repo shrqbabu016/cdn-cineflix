@@ -1,14 +1,12 @@
-
 {
-  "name": "cloudflare-browser",
+  "name": "vps-channel-extractor",
   "version": "1.0.0",
-  "private": true,
-  "type": "commonjs",
+  "description": "Standalone multi-channel extractor service for VPS (runs every 30 mins, syncs to Supabase)",
+  "main": "extractor.js",
   "scripts": {
-    "start": "node browser.js"
+    "start": "node webcric.js",
+    "once": "node webcric.js --once"
   },
-  "dependencies": {
-    "puppeteer-core": "^21.0.0",
-    "@browserbasehq/sdk": "^1.0.0"
-  }
+  "dependencies": {},
+  "private": true
 }
