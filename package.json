@@ -2,7 +2,7 @@
   "name": "vps-channel-extractor",
   "version": "1.0.0",
   "description": "Standalone multi-channel extractor service for VPS (runs every 30 mins, syncs to Supabase)",
-  "main": "extractor.js",
+  "main": "webcric.js",
   "scripts": {
     "start": "node webcric.js",
     "once": "node webcric.js --once"
